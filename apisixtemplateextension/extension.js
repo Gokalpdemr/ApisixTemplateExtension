@@ -30,11 +30,16 @@ async function generateRouteJson(
 	isConsumer,
 	isCluster,
 	hostname,
+	routeCount,
 	isIntprod
 ) {
 	const route = {
-		uri: `/${environment === "intprod" ? "" : "test-"}${routeName}/api/*`,
-		name: `${environment === "intprod" ? "" : "test-"}${routeName}`,
+		uri: `/${routeCount === 1 
+			? `${environment === "intprod" ? projectName: `test-${projectName}`}`
+			: `${environment === "intprod" ? routeName : `test-${routeName}`}`}/api/*`,
+
+
+		name: `${routeCount===1 ? `${environment === "intprod" ? "" : "test-"}${routeName}`:`${environment === "intprod" ? "" : "test-"}${routeName}`}`,
 		methods: ["POST", "GET", "OPTIONS"],
 		plugins: {
 			...(isIntprod && {
@@ -120,18 +125,20 @@ async function generateRouteJson(
 				},
 			}),
 			"proxy-rewrite": {
-				regex_uri: [`^/${routeName}/api/(.*)`, "/api/$1"],
+				regex_uri: [`^/${routeCount===1?`${environment==="intprod" ?projectName:`test-${projectName}`}`
+					:`${environment==="intprod" ? routeName:`test-${routeName}`}`
+				}/api/(.*)`, "/api/$1"],
 			},
 		},
 		upstream_id: "UPSTREAMID",
 		status: 1,
 	};
 
-	if (isCluster) {
-		route.plugins["proxy-rewrite"].regex_uri[0] = `^/${routeName}/api/(.*)`;
-	} else if (hostname) {
-		route.plugins["proxy-rewrite"].regex_uri[0] = `^/${routeName}/api/(.*)`;
-	}
+	// if (isCluster) {
+	// 	route.plugins["proxy-rewrite"].regex_uri[0] = `^/${routeName}/api/(.*)`;
+	// } else if (hostname) {
+	// 	route.plugins["proxy-rewrite"].regex_uri[0] = `^/${routeName}/api/(.*)`;
+	// }
 
 	return route;
 }
@@ -141,8 +148,10 @@ async function generateUpstreamJson(
 	environment,
 	isCluster,
 	hostname,
+	routeCount,
 	isIntprod
 ) {
+	routeName=routeCount==1?projectName:routeName
 	const upstreamJson = {
 		nodes: [
 			{
@@ -218,11 +227,11 @@ async function generateConsumerJson(projectName) {
 
 async function createProjectStructure() {
 	const projectName = await vscode.window.showInputBox({
-		placeHolder: "Enter project name (myProject)",
+		placeHolder: "Proje adını giriniz (myProject)",
 	});
 
 	if (!projectName) {
-		vscode.window.showErrorMessage("Project name must be provided.");
+		vscode.window.showErrorMessage("Proje adı girilmeli");
 
 		return;
 	}
@@ -230,12 +239,12 @@ async function createProjectStructure() {
 	const deploymentType = await vscode.window.showQuickPick(
 		["Cluster", "Ingress"],
 		{
-			placeHolder: "Will you use Cluster or Ingress?",
+			placeHolder: "Cluster'ı mı yoksa Ingress'i mi kullanacaksınız?",
 		}
 	);
 
 	if (!deploymentType) {
-		vscode.window.showErrorMessage("Deployment type must be selected.");
+		vscode.window.showErrorMessage("Dağıtım türü seçilmelidir");
 
 		return;
 	}
@@ -243,29 +252,42 @@ async function createProjectStructure() {
 	const isCluster = deploymentType === "Cluster";
 
 	const isConsumer =
-		(await vscode.window.showQuickPick(["Yes", "No"], {
-			placeHolder: "Should a consumer.json file be created?",
-		})) === "Yes";
+		(await vscode.window.showQuickPick(["Evet", "Hayır"], {
+			placeHolder: "Consumer.json dosyası oluşturulmalı mı?",
+		})) === "Evet";
 
 	let hostname;
 
 	if (!isCluster) {
 		hostname = await vscode.window.showInputBox({
-			placeHolder: "Enter hostname",
+			placeHolder: "Host ismini giriniz.",
 		});
 	}
 
-	const routeNamesInput = await vscode.window.showInputBox({
-		placeHolder: "Enter route names (comma-separated)",
-	});
 
-	if (!routeNamesInput) {
-		vscode.window.showErrorMessage("Route names must be provided.");
+	const hasSubRoutes =
+		(await vscode.window.showQuickPick(["Evet", "Hayır"], {
+			placeHolder: "Birden fazla route var mı ?",
+		})) === "Evet";
+    
+	let routeNames;
+    if(hasSubRoutes){
+		const routeNamesInput = await vscode.window.showInputBox({
+			placeHolder: "Route isimlerini giriniz (virgül ile ayırarak)",
+		});
 
-		return;
+		if (!routeNamesInput) {
+			vscode.window.showErrorMessage("Route adları girilmelidir");
+			return;
+		}
+	    routeNames  = routeNamesInput.split(",").map((name) => name.trim());
+
+	}else{
+       routeNames=["route-1"]
 	}
 
-	const routeNames = routeNamesInput.split(",").map((name) => name.trim());
+	
+
 
 	const projectFolder = path.join(vscode.workspace.rootPath || "", projectName);
 
@@ -313,6 +335,7 @@ async function createProjectStructure() {
 			isConsumer,
 			isCluster,
 			hostname,
+			routeNames.length,
 			true
 		);
 
@@ -322,6 +345,7 @@ async function createProjectStructure() {
 			"intprod",
 			isCluster,
 			hostname,
+			routeNames.length,
 			true
 		);
 
@@ -336,6 +360,7 @@ async function createProjectStructure() {
 			isConsumer,
 			isCluster,
 			hostname,
+			routeNames.length,
 			false
 		);
 
@@ -345,6 +370,7 @@ async function createProjectStructure() {
 			"nonprod",
 			isCluster,
 			hostname,
+			routeNames.length,
 			false
 		);
 
@@ -388,6 +414,6 @@ async function createProjectStructure() {
 	}
 
 	vscode.window.showInformationMessage(
-		"Project structure created successfully."
+		"Proje yapısı başarıyla oluşturuldu."
 	);
 }

@@ -1,19 +1,23 @@
 # Apisix Template Generator
 
-Apisix Template Generator is a Visual Studio Code extension that allows you to automatically generate APISIX gateway configurations for API management. This extension quickly generates the necessary `route.json`, `upstream.json`, and `consumer.json` files for your project.
-
-## Usage
-
-After installing the extension, follow the steps below to get started.
-
-### Step 1: Install the Extension
-1. Search for "**APISIX Template Generator**" in the `Extensions` tab in Visual Studio Code.
-2. Install the extension.
-
-### Step 2: Run Commands
-1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS).
-2. Search for the "Create Apisix" command and run it.
+Apisix Template Generator, API yönetimi için otomatik olarak APISIX gateway yapılandırmaları oluşturmanıza olanak tanıyan bir Visual Studio Code uzantısıdır. Bu uzantı, projeniz için gerekli "route.json", "upstream.json" ve "consumer.json" dosyalarını hızlı bir şekilde oluşturur.
 
 
-## Owner
+## Kullanım
+
+Uzantıyı yükledikten sonra başlamak için aşağıdaki adımları izleyin.
+
+### Adım 1: Extension'u Yükleyin
+
+1. Visual Studio Code'daki 'Extensions' sekmesinde "**APISIX Template Generator**" ifadesini arayın.
+2. Extension'u yükleyin
+
+### Adım 2: Komut Çalıştırma
+
+1. `Ctrl+Shift+P` (veya mocOS'da `Cmd+Shift+P`). tuşlarına basın
+2.  "Create Apisix" komutunu arayın ve çalıştırın.
+
+
+## Oluşturan
+
 **Yazilim Altyapi**
