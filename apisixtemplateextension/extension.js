@@ -31,15 +31,22 @@ async function generateRouteJson(
 	isCluster,
 	hostname,
 	routeCount,
-	isIntprod
+	isIntprod,
+	isDapr
 ) {
+	let uri;
+
+	if (isDapr) {
+		uri = `/${environment === "intprod" ? `${projectName}` : `test-${projectName}`}/${routeName}/*`;
+	} else {
+		uri = `/${routeCount === 1
+			? `${environment === "intprod" ? `${projectName}` : `test-${projectName}`}` 
+			: `${environment === "intprod" ? `${routeName}` : `test-${routeName}`}`}/api/*`;
+	}
 	const route = {
-		uri: `/${routeCount === 1 
-			? `${environment === "intprod" ? projectName: `test-${projectName}`}`
-			: `${environment === "intprod" ? routeName : `test-${routeName}`}`}/api/*`,
+		uri: uri,
 
-
-		name: `${routeCount===1 ? `${environment === "intprod" ? "" : "test-"}${routeName}`:`${environment === "intprod" ? "" : "test-"}${routeName}`}`,
+		name: isDapr?`${environment === "intprod" ?`intprod-${projectName}-${routeName}`:`test-${projectName}-${routeName}`}` :`${routeCount===1 ? `${environment === "intprod" ? "" : "test-"}${projectName}`:`${environment === "intprod" ? "" : "test-"}${routeName}`}`,
 		methods: ["POST", "GET", "OPTIONS"],
 		plugins: {
 			...(isIntprod && {
@@ -125,20 +132,18 @@ async function generateRouteJson(
 				},
 			}),
 			"proxy-rewrite": {
-				regex_uri: [`^/${routeCount===1?`${environment==="intprod" ?projectName:`test-${projectName}`}`
-					:`${environment==="intprod" ? routeName:`test-${routeName}`}`
-				}/api/(.*)`, "/api/$1"],
-			},
+				regex_uri: isDapr
+				// Dapr varsa özel düzenleme
+				? [`^/${environment === "intprod" ? `${projectName}` : `test-${projectName}`}/${routeName}/*`, `/v1.0/invoke/${routeName}.test-${projectName}/method/$1`]
+				// Dapr yoksa eski düzenleme
+				: [`^/${routeCount === 1 
+					? `${environment === "intprod" ? `${projectName}` : `test-${projectName}`}` 
+					: `${environment === "intprod" ? `${routeName}` : `test-${routeName}`}`}/api/(.*)`, "/api/$1"],
+		},
 		},
 		upstream_id: "UPSTREAMID",
 		status: 1,
 	};
-
-	// if (isCluster) {
-	// 	route.plugins["proxy-rewrite"].regex_uri[0] = `^/${routeName}/api/(.*)`;
-	// } else if (hostname) {
-	// 	route.plugins["proxy-rewrite"].regex_uri[0] = `^/${routeName}/api/(.*)`;
-	// }
 
 	return route;
 }
@@ -149,13 +154,17 @@ async function generateUpstreamJson(
 	isCluster,
 	hostname,
 	routeCount,
-	isIntprod
+	isIntprod,
+	isDapr
+
 ) {
 	routeName=routeCount==1?projectName:routeName
 	const upstreamJson = {
 		nodes: [
 			{
-				host: isCluster
+				host: isDapr ?
+				      "localhost" 
+					  :isCluster
 					? `${routeName}-host.${environment === "intprod" ? "intprod" : "test"
 					}-${routeName}.svc.cluster.local`
 					: hostname
@@ -163,7 +172,7 @@ async function generateUpstreamJson(
 						: `${routeName}-host.${environment === "intprod" ? "intprod" : "test"
 						}-${routeName}.svc.cluster.local`,
 
-				port: isCluster ? 5000 : 443,
+				port: isDapr ? 3500 : isCluster ? 5000 : 443,
 
 				weight: 1,
 			},
@@ -181,17 +190,18 @@ async function generateUpstreamJson(
 
 		hash_on: "vars",
 
-		scheme: isCluster ? "http" : "https",
+		scheme:isDapr || isCluster ? "http" : "https",
 
 		pass_host: "node",
 
-		name: isCluster
+		name:isDapr ? "apisix-dapr"
+		    : isCluster
 			? isIntprod
 				? `intprod-${routeName}`
 				: `test-${routeName}`
 			: `${hostname}`,
 
-		desc: isCluster
+		desc: isDapr? "apisix-dapr" :isCluster
 			? `${routeName} den verilen servislerin upstream tanimi`
 			: `${hostname}`,
 
@@ -237,7 +247,7 @@ async function createProjectStructure() {
 	}
 
 	const deploymentType = await vscode.window.showQuickPick(
-		["Cluster", "Ingress"],
+		["Cluster", "Ingress", "Dapr"],
 		{
 			placeHolder: "Cluster'ı mı yoksa Ingress'i mi kullanacaksınız?",
 		}
@@ -250,6 +260,7 @@ async function createProjectStructure() {
 	}
 
 	const isCluster = deploymentType === "Cluster";
+	const isDapr = deploymentType === "Dapr";
 
 	const isConsumer =
 		(await vscode.window.showQuickPick(["Evet", "Hayır"], {
@@ -258,20 +269,15 @@ async function createProjectStructure() {
 
 	let hostname;
 
-	if (!isCluster) {
+	if (!isCluster&&!isDapr) {
 		hostname = await vscode.window.showInputBox({
 			placeHolder: "Host ismini giriniz.",
 		});
 	}
 
 
-	const hasSubRoutes =
-		(await vscode.window.showQuickPick(["Evet", "Hayır"], {
-			placeHolder: "Birden fazla route var mı ?",
-		})) === "Evet";
-    
-	let routeNames;
-    if(hasSubRoutes){
+	let routeNames = [];
+	if (isDapr) {
 		const routeNamesInput = await vscode.window.showInputBox({
 			placeHolder: "Route isimlerini giriniz (virgül ile ayırarak)",
 		});
@@ -280,14 +286,29 @@ async function createProjectStructure() {
 			vscode.window.showErrorMessage("Route adları girilmelidir");
 			return;
 		}
-	    routeNames  = routeNamesInput.split(",").map((name) => name.trim());
 
-	}else{
-       routeNames=["route-1"]
+		routeNames = routeNamesInput.split(",").map((name) => name.trim());
+	} else {
+		const hasSubRoutes =
+			(await vscode.window.showQuickPick(["Evet", "Hayır"], {
+				placeHolder: "Birden fazla route var mı ?",
+			})) === "Evet";
+
+		if (hasSubRoutes) {
+			const routeNamesInput = await vscode.window.showInputBox({
+				placeHolder: "Route isimlerini giriniz (virgül ile ayırarak)",
+			});
+
+			if (!routeNamesInput) {
+				vscode.window.showErrorMessage("Route adları girilmelidir");
+				return;
+			}
+
+			routeNames = routeNamesInput.split(",").map((name) => name.trim());
+		} else {
+			routeNames = ["route-1"];
+		}
 	}
-
-	
-
 
 	const projectFolder = path.join(vscode.workspace.rootPath || "", projectName);
 
@@ -317,17 +338,14 @@ async function createProjectStructure() {
 		}
 
 		const routeJsonIntprodPath = path.join(intprodFolder, "route.json");
-
 		const upstreamJsonIntprodPath = path.join(intprodFolder, "upstream.json");
-
 		const consumerJsonIntprodPath = path.join(intprodFolder, "consumer.json");
 
 		const routeJsonNonprodPath = path.join(nonprodFolder, "route.json");
-
 		const upstreamJsonNonprodPath = path.join(nonprodFolder, "upstream.json");
-
 		const consumerJsonNonprodPath = path.join(nonprodFolder, "consumer.json");
 
+		// Route JSON'ları için generate işlemi
 		const routeJsonIntprod = await generateRouteJson(
 			projectName,
 			routeName,
@@ -336,7 +354,8 @@ async function createProjectStructure() {
 			isCluster,
 			hostname,
 			routeNames.length,
-			true
+			true,
+			isDapr
 		);
 
 		const upstreamJsonIntprod = await generateUpstreamJson(
@@ -346,7 +365,9 @@ async function createProjectStructure() {
 			isCluster,
 			hostname,
 			routeNames.length,
-			true
+			true,
+			isDapr
+
 		);
 
 		const consumerJsonIntprod = isConsumer
@@ -361,7 +382,8 @@ async function createProjectStructure() {
 			isCluster,
 			hostname,
 			routeNames.length,
-			false
+			false,
+			isDapr
 		);
 
 		const upstreamJsonNonprod = await generateUpstreamJson(
@@ -371,7 +393,9 @@ async function createProjectStructure() {
 			isCluster,
 			hostname,
 			routeNames.length,
-			false
+			false,
+			isDapr
+
 		);
 
 		const consumerJsonNonprod = isConsumer
@@ -413,7 +437,7 @@ async function createProjectStructure() {
 		}
 	}
 
-	vscode.window.showInformationMessage(
-		"Proje yapısı başarıyla oluşturuldu."
-	);
+	vscode.window.showInformationMessage("Proje yapısı başarıyla oluşturuldu.");
 }
+
+
